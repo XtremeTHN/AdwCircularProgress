@@ -137,15 +137,20 @@ class Window(Adw.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app)
 
-        box = Gtk.Box()
-        image = Gtk.Image.new()
+        view = Adw.ToolbarView.new()
+        header = Adw.HeaderBar.new()
+        view.add_top_bar(header)
 
+        btt = Gtk.Button.new()
+
+        image = Gtk.Image.new()
         self.s = CircularProgress(image)
         image.set_from_paintable(self.s)
-        image.set_pixel_size(42)
 
-        box.append(image)
-        self.set_content(box)
+        btt.set_child(image)
+
+        header.pack_end(btt)
+        self.set_content(view)
 
         GLib.timeout_add(50, self.on_time)
     
