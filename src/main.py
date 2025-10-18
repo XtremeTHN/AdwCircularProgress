@@ -1,0 +1,162 @@
+import gi
+import math
+
+gi.require_versions({"Adw": "1", "Gtk": "4.0"})
+
+from gi.repository import Adw, Gio, Gtk, GObject, Graphene, Gdk
+
+
+class Spinner(GObject.Object, Gdk.Paintable, Gtk.SymbolicPaintable):
+    widget: Gtk.Widget = GObject.Property(type=Gtk.Widget)
+
+    def __init__(self, widget: Gtk.Widget):
+        super().__init__()
+
+        self.__icon_name = None
+        self.__progress = 0.0
+
+        self.widget = widget
+
+        self.check_paintable: Gtk.IconPaintable = None
+        self.check_progress: float = 0.0
+        self.done_animation: Adw.TimedAnimation = None
+
+        widget.connect("notify::scale-factor", self.on_scale_change)
+
+    def do_snapshot_symbolic(self, snapshot: Gtk.Snapshot, width, height, colors, _):
+        if self.check_progress < 1:
+            snapshot.save()
+            snapshot.translate(Graphene.Point().init(width / 2.0, height / 2.0))
+            snapshot.scale(1.0 - self.check_progress, 1.0 - self.check_progress)
+            snapshot.translate(Graphene.Point().init(-width / 2.0, -height / 2.0))
+            snapshot.restore()
+
+        if self.check_progress > 0:
+            snapshot.save()
+            snapshot.translate(Graphene.Point().init(width / 2.0, height / 2.0))
+            snapshot.scale(self.check_progress, self.check_progress)
+            snapshot.translate(Graphene.Point().init(-width / 2.0, -height / 2.0))
+            Gtk.SymbolicPaintable.snapshot_symbolic(
+                self, snapshot, width, height, colors
+            )
+            snapshot.restore()
+
+        ctx = snapshot.append_cairo(Graphene.Rect().init(-2, -2, width + 4, width + 4))
+        arc_end = self.progress * math.pi * 2 - math.pi / 2
+
+        ctx.translate(width / 2.0, height / 2.0)
+
+        color = colors[0]
+        ctx.set_source_rgba(color.red, color.green, color.blue, color.alpha)
+
+        ctx.arc(0, 0, width / 2.0 + 1, -math.pi / 2, arc_end)
+        ctx.stroke()
+
+        rgba = color.copy()
+        rgba.alpha *= 0.25
+
+        ctx.set_source_rgba(rgba.red, rgba.green, rgba.blue, rgba.alpha)
+        ctx.arc(0, 0, width / 2.0 + 1, arc_end, 3.0 * math.pi / 2.0)
+        ctx.stroke()
+
+    def __on_anim_done(self, _, val):
+        self.check_progress = val
+        self.invalidate_contents()
+
+    def __on_anim_done_done(self, *_):
+        if self.check_progress > 0.5:
+            self.done_animation.set_value_from(1)
+            self.done_animation.set_value_to(0)
+        else:
+            self.done_animation = None
+
+    def animate_done(self):
+        if self.done_animation:
+            return
+
+        target = Adw.CallbackAnimationTarget.new(self.__on_anim_done)
+        self.done_animation = Adw.TimedAnimation.new(self.widget, 0, 1, 500, target)
+        self.done_animation.connect("done", self.__on_anim_done_done)
+
+        self.done_animation.set_easing(Adw.Easing.EASE_IN_OUT_CUBIC)
+        self.done_animation.play()
+
+    @GObject.Property(type=str)
+    def icon_name(self):
+        return self.__icon_name
+
+    @icon_name.setter
+    def icon_name(self, value):
+        self.__icon_name = value
+        self.cache_icons()
+
+    @GObject.Property(type=float)
+    def progress(self):
+        return self.__progress
+
+    @progress.setter
+    def progress(self, value):
+        self.__progress = value
+        self.invalidate_contents()
+
+    def get_intrinsic_height(self):
+        return 16 * self.widget.get_scale_factor()
+
+    def get_intrinsic_width(self):
+        return 16 * self.widget.get_scale_factor()
+
+    def on_scale_change(self, *_):
+        self.cache_icons()
+        self.invalidate_size()
+
+    def cache_icons(self):
+        if not self.icon_name:
+            return
+
+        display = self.widget.get_display()
+        theme = Gtk.IconTheme.get_for_display(display)
+        scale = self.widget.get_scale_factor()
+        direction = self.widget.get_direction()
+
+        self.check_paintable = theme.lookup_icon(
+            self.icon_name,
+            None,
+            16,
+            scale,
+            direction,
+            Gtk.IconLookupFlags.FORCE_SYMBOLIC,
+        )
+
+
+class Window(Adw.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app)
+
+        box = Gtk.Box(valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER)
+        image = Gtk.Image.new()
+
+        s = Spinner(image)
+        image.set_from_paintable(s)
+
+        box.append(image)
+        self.set_content(box)
+
+
+class App(Adw.Application):
+    def __init__(self):
+        super().__init__(
+            application_id="com.github.XtremeTHN.SpinnerExp",
+            flags=Gio.ApplicationFlags.DEFAULT_FLAGS,
+        )
+
+    def do_activate(self):
+        Adw.Application.do_activate(self)
+
+        if not self.props.active_window:
+            win = Window(self)
+            win.present()
+
+
+def main():
+    app = App()
+    return app.run()
