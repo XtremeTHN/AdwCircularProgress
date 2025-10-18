@@ -3,10 +3,10 @@ import math
 
 gi.require_versions({"Adw": "1", "Gtk": "4.0"})
 
-from gi.repository import Adw, Gio, Gtk, GObject, Graphene, Gdk
+from gi.repository import Adw, Gio, Gtk, GObject, Graphene, Gdk, GLib
 
 
-class Spinner(GObject.Object, Gdk.Paintable, Gtk.SymbolicPaintable):
+class CircularProgress(GObject.Object, Gdk.Paintable, Gtk.SymbolicPaintable):
     widget: Gtk.Widget = GObject.Property(type=Gtk.Widget)
 
     def __init__(self, widget: Gtk.Widget):
@@ -37,7 +37,7 @@ class Spinner(GObject.Object, Gdk.Paintable, Gtk.SymbolicPaintable):
             snapshot.scale(self.check_progress, self.check_progress)
             snapshot.translate(Graphene.Point().init(-width / 2.0, -height / 2.0))
             Gtk.SymbolicPaintable.snapshot_symbolic(
-                self, snapshot, width, height, colors
+                self.check_paintable, snapshot, width, height, colors
             )
             snapshot.restore()
 
@@ -59,7 +59,7 @@ class Spinner(GObject.Object, Gdk.Paintable, Gtk.SymbolicPaintable):
         ctx.arc(0, 0, width / 2.0 + 1, arc_end, 3.0 * math.pi / 2.0)
         ctx.stroke()
 
-    def __on_anim_done(self, _, val):
+    def __on_anim_done(self, val):
         self.check_progress = val
         self.invalidate_contents()
 
@@ -96,6 +96,11 @@ class Spinner(GObject.Object, Gdk.Paintable, Gtk.SymbolicPaintable):
 
     @progress.setter
     def progress(self, value):
+        if value > 1:
+            value = 1 
+        if value < 0:
+            value = 0
+        
         self.__progress = value
         self.invalidate_contents()
 
@@ -132,15 +137,24 @@ class Window(Adw.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app)
 
-        box = Gtk.Box(valign=Gtk.Align.CENTER, halign=Gtk.Align.CENTER)
+        box = Gtk.Box()
         image = Gtk.Image.new()
 
-        s = Spinner(image)
-        image.set_from_paintable(s)
+        self.s = CircularProgress(image)
+        image.set_from_paintable(self.s)
+        image.set_pixel_size(42)
 
         box.append(image)
         self.set_content(box)
 
+        GLib.timeout_add(50, self.on_time)
+    
+    def on_time(self):
+        if self.s.progress == 1:
+            return False
+        
+        self.s.progress += 0.005
+        return True
 
 class App(Adw.Application):
     def __init__(self):
